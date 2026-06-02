@@ -1,12 +1,18 @@
 #include <utility>
 
+
 namespace selfmade {
     template <typename T>
+    struct DefaultDeleter {
+        void operator()(T* p) const { delete p; }
+    };
+
+    template <typename T, typename Deleter = DefaultDeleter<T>>
     class UniquePtr {
     public:
         UniquePtr() = default;
-        explicit UniquePtr(T* p) : data_{p} {}
-        ~UniquePtr() { delete data_; }
+        explicit UniquePtr(T* p, Deleter deleter) : data_{p}, deleter_{deleter} {}
+        ~UniquePtr() { deleter_(data_); }
         UniquePtr(const UniquePtr& other) = delete;
         UniquePtr& operator=(const UniquePtr& other) = delete;
         UniquePtr(UniquePtr&& other) noexcept {
@@ -17,7 +23,7 @@ namespace selfmade {
             if (this == &other) {
                 return *this;
             }
-            delete data_;
+            deleter_(data_);
             data_ = std::exchange(other.data_, nullptr);
             return *this;
 
@@ -36,16 +42,21 @@ namespace selfmade {
             if (p == data_) {
                 return;
             }
-            delete data_;
+            deleter_(data_);
             data_ = p;
         }
 
         T& operator*() const { return *data_; };
         T* operator->() const { return data_; };
-        
+
 
     private:
         T* data_{nullptr};
+        [[no_unique_address]] Deleter deleter_;
     };
 
+    template <typename T, typename... Args>
+    UniquePtr<T> make_shared(Args&&... args) {
+        return UniquePtr<T>(new T(std::forward<Args>(args)...));
+    }
 }
