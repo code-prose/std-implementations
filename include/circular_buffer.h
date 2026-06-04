@@ -6,6 +6,7 @@ namespace circ_buffer {
     public:
         CircularBuffer() : data_{std::make_unique<T[]>(N)} {}
        
+        // could write a overload (T&& other)
         void write(const T& item) {
             if (full()) {
                 read_idx_ = (read_idx_ + 1) % N;
