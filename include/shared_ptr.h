@@ -46,7 +46,7 @@ namespace sharing_is_caring {
             SharedPtr(SharedPtr&& other) noexcept {
                 cb_ = std::exchange(other.cb_, nullptr);
                 data_ = std::exchange(other.data_, nullptr);
-                deleter_ = other.deleter_;
+                deleter_ = std::move(other.deleter_);
             } // move ctor.. nothing exists before
 
             SharedPtr& operator=(SharedPtr&& other) noexcept {
@@ -59,7 +59,7 @@ namespace sharing_is_caring {
 
                 cb_ = std::exchange(other.cb_, nullptr);
                 data_ = std::exchange(other.data_, nullptr);
-                deleter_ = other.deleter_;
+                deleter_ = std::move(other.deleter_);
                 return *this;
             }
 
