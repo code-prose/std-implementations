@@ -41,7 +41,7 @@ namespace what_if_my_array_is_too_small {
 
         // no copies, move objs
         Vector(Vector&& other) noexcept {
-            allocator_ = std::move_if_noexcept(other.allocator_);
+            allocator_ = std::move(other.allocator_);
             capacity_ = std::exchange(other.capacity_, 0);
             size_ = std::exchange(other.size_, 0);
 
@@ -54,7 +54,7 @@ namespace what_if_my_array_is_too_small {
             }
             free();
 
-            allocator_ = std::move_if_noexcept(other.allocator_);
+            allocator_ = std::move(other.allocator_);
             capacity_ = std::exchange(other.capacity_, 0);
             size_ = std::exchange(other.size_, 0);
 
@@ -73,12 +73,21 @@ namespace what_if_my_array_is_too_small {
 
         void push_back(const T& item) {
             if (size_ == capacity_) {
-                // this should just inline... right?
                 std::size_t new_cap = new_capacity();
                 T* temp_data_ = allocator_.allocate(new_cap);
-                for (auto i{0uz}; i < size_; i++) {
-                    new (temp_data_ + i) T(data_[i]);
+                auto curr{0uz};
+                try {
+                    for (; curr < size_; curr++) {
+                        new (temp_data_ + curr) T(std::move_if_noexcept(data_[curr]));
+                    }
+                } catch (...) {
+                    for (auto i{0uz}; i < curr; i++) {
+                        temp_data_[i].~T();
+                    } 
+                    allocator_.deallocate(temp_data_, new_cap);
+                    throw;
                 }
+
                 for (auto i{0uz}; i < size_; i++) {
                     data_[i].~T();
                 }
