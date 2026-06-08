@@ -1,6 +1,6 @@
 #include <utility>
 
-namespace i_am_not_caring {
+namespace woo_rewrite_uniq {
     template <typename T>
     struct DefaultDeleter {
         void operator()(T* p) { delete p; }
@@ -10,9 +10,10 @@ namespace i_am_not_caring {
     class UniquePtr {
         public:
             UniquePtr() = default;
-            explicit UniquePtr(T* p) : data_{p}, deleter_{} {}
+            explicit UniquePtr(T* p) : data_{p} {}
             UniquePtr(T* p, Deleter deleter) : data_{p}, deleter_{deleter} {}
             ~UniquePtr() { deleter_(data_); }
+
             UniquePtr(const UniquePtr& other) = delete;
             UniquePtr& operator=(const UniquePtr& other) = delete;
 
@@ -31,26 +32,30 @@ namespace i_am_not_caring {
                 return *this;
             }
 
+
             void reset(T* p = nullptr) {
-                if (p == data_) {
+                if (p == data_) { 
                     return;
                 }
-                deleter_(data_);
+                T* temp = data_;
                 data_ = p;
+                deleter_(data_);
             }
 
-            T* operator->() const { return data_; }
-            T* get() const { return data_; }
-            T& operator*() const { return *data_; }
-            T* release() { return std::exchange(data_, nullptr); }
+            T* get() const noexcept { return data_; }
+            T* operator->() const noexcept { return data_; }
+            T& operator*() const noexcept { return *data_; }
+            T* release() noexcept { return std::exchange(data_, nullptr); }
 
         private:
             T* data_{nullptr};
             Deleter deleter_{};
+
     };
 
     template <typename T, typename... Args>
     UniquePtr<T> make_unique(Args&&... args) {
         return UniquePtr<T>(new T(std::forward<Args>(args)...));
     }
+
 }
