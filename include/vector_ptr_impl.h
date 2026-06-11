@@ -44,6 +44,7 @@ public:
     void push_back(const T& value) {
         // check if size has reached capacity
         if (limit_ - first_ == size()) {
+            // 2 was chosen arbitrarily, but we can amortize push_back to O(1) with a geometric sequence so N > 1 where N is an integer
             std::size_t new_cap = size() * 2;
             T* new_first_ = static_cast<T*>(::operator new(new_cap * sizeof(T)));
             auto i{0uz};
