@@ -131,12 +131,12 @@ namespace sharing_is_caring {
                 return *this;
             }
 
-            WeakPtr(WeakPtr&& other) {
+            WeakPtr(WeakPtr&& other) noexcept {
                 cb_ = std::exchange(other.cb_, nullptr);
                 data_ = std::exchange(other.data_, nullptr);
             }
 
-            WeakPtr& operator=(WeakPtr&& other) {
+            WeakPtr& operator=(WeakPtr&& other) noexcept {
                 if (this == &other) {
                     return *this;
                 }
