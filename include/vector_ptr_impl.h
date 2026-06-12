@@ -45,37 +45,6 @@ public:
         last_->~T();
     }
 
-    void cleanup() {
-        for (T* p = first_; p != last_; ++p) {
-            p->~T();
-        }
-        ::operator delete(first_);
-    }
-
-    void grow() {
-        if (last_ == limit_) {
-            std::size_t new_capacity = capacity() ? capacity() * 2 : 1;
-            T* new_first_ = static_cast<T*>(::operator new(new_capacity * sizeof(T)));
-            auto i{0uz};
-            try {
-                for (; first_ + i < last_; ++i) {
-                    new (new_first_ + i) T(std::move_if_noexcept(first_[i]));
-                }
-
-                cleanup();
-                last_ = new_first_ + size();
-                first_ = new_first_;
-                limit_ = first_ + new_capacity;
-
-            } catch (...) {
-               for (auto j{0uz}; j < i; ++j) {
-                   new_first_[j].~T();
-               } 
-               ::operator delete(new_first_);
-               throw;
-            }
-        }
-    }
 
     void push_back(const T& value) {
         grow();
@@ -128,4 +97,36 @@ private:
     T* first_ = nullptr;
     T* last_ = nullptr;
     T* limit_ = nullptr;
+
+    void cleanup() {
+        for (T* p = first_; p != last_; ++p) {
+            p->~T();
+        }
+        ::operator delete(first_);
+    }
+
+    void grow() {
+        if (last_ == limit_) {
+            std::size_t new_capacity = capacity() ? capacity() * 2 : 1;
+            T* new_first_ = static_cast<T*>(::operator new(new_capacity * sizeof(T)));
+            auto i{0uz};
+            try {
+                for (; first_ + i < last_; ++i) {
+                    new (new_first_ + i) T(std::move_if_noexcept(first_[i]));
+                }
+
+                cleanup();
+                last_ = new_first_ + size();
+                first_ = new_first_;
+                limit_ = first_ + new_capacity;
+
+            } catch (...) {
+               for (auto j{0uz}; j < i; ++j) {
+                   new_first_[j].~T();
+               } 
+               ::operator delete(new_first_);
+               throw;
+            }
+        }
+    }
 };
