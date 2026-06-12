@@ -1,41 +1,48 @@
-#include <atomic>
 #include <utility>
+#include <atomic>
 
-namespace woo_rewrite {
+namespace sharing_is_caring {
+    template <typename T> class WeakPtr;
+
     template <typename T>
     struct DefaultDeleter {
         void operator()(T* p) { delete p; }
     };
 
     struct ControlBlock {
-        std::atomic<std::size_t> use_count_{1};
+        std::atomic<std::size_t> strong_count_{1};
+        std::atomic<std::size_t> weak_count_{1};
     };
 
     template <typename T, typename Deleter = DefaultDeleter<T>>
     class SharedPtr {
         public:
+            friend class WeakPtr<T>;
+
             SharedPtr() = default;
-            explicit SharedPtr(T* p) : data_{p}, cb_{new ControlBlock{}}, deleter_{} {}
+            explicit SharedPtr(T* p) : data_{p}, cb_{new ControlBlock{}} {}
             SharedPtr(T* p, Deleter deleter) : data_{p}, cb_{new ControlBlock{}}, deleter_{deleter} {}
-            ~SharedPtr() { free(); }
+            ~SharedPtr() {
+                release();
+            }
 
             SharedPtr(const SharedPtr& other) {
                 cb_ = other.cb_;
                 data_ = other.data_;
                 deleter_ = other.deleter_;
-                if (cb_) increment();
+                increment();
             }
 
             SharedPtr& operator=(const SharedPtr& other) {
                 if (this == &other) {
                     return *this;
                 }
-                free();
+                release();
 
                 cb_ = other.cb_;
                 data_ = other.data_;
                 deleter_ = other.deleter_;
-                if (cb_) increment();
+                increment();
 
                 return *this;
             }
@@ -44,15 +51,14 @@ namespace woo_rewrite {
                 cb_ = std::exchange(other.cb_, nullptr);
                 data_ = std::exchange(other.data_, nullptr);
                 deleter_ = std::move(other.deleter_);
-
             }
 
             SharedPtr& operator=(SharedPtr&& other) noexcept {
                 if (this == &other) {
                     return *this;
                 }
-                free();
 
+                release();
                 cb_ = std::exchange(other.cb_, nullptr);
                 data_ = std::exchange(other.data_, nullptr);
                 deleter_ = std::move(other.deleter_);
@@ -60,34 +66,36 @@ namespace woo_rewrite {
                 return *this;
             }
 
+            std::size_t use_count() const { return cb_ ? cb_->strong_count_ : 0; }
 
+            T* operator->() const noexcept { return data_; }
+            T* get() const noexcept { return data_; }
+            T& operator*() const noexcept { return *data_; }
 
-            void reset(T* p = nullptr) {
-                free();
-                data_ = p;
-                cb_ = p ? new ControlBlock{} : nullptr;
-            }
-
-            T* get() const { return data_; }
-            T* operator->() const { return data_; }
-            T& operator*() const { return *data_; }
 
         private:
             T* data_{nullptr};
-            ControlBlock* cb_{};
+            ControlBlock* cb_{nullptr};
             Deleter deleter_{};
 
-            void free() {
-                if(cb_ && decrement() == 1) {
+            // adopting for weakptr
+            SharedPtr(T* p, ControlBlock* cb) : data_{p}, cb_{cb} {}
+
+            void release() {
+                if (cb_ && decrement() == 1) {
                     deleter_(data_);
-                    delete cb_;
+                    if (cb_->weak_count_.fetch_sub(1) == 1) {
+                        delete cb_;
+                    }
                 }
                 data_ = nullptr;
                 cb_ = nullptr;
             }
-            void increment() { cb_->use_count_.fetch_add(1); }
+
+            void increment() { if (cb_) cb_->strong_count_.fetch_add(1); }
+
             std::size_t decrement() {
-                return cb_->use_count_.fetch_sub(1);
+                return cb_->strong_count_.fetch_sub(1);
             }
     };
 
@@ -95,4 +103,82 @@ namespace woo_rewrite {
     SharedPtr<T> make_shared(Args&&... args) {
         return SharedPtr<T>(new T(std::forward<Args>(args)...));
     }
+
+
+    template <typename T>
+    class WeakPtr {
+        public:
+            WeakPtr() = default;
+            ~WeakPtr() {
+                release();
+            }
+
+            WeakPtr(const WeakPtr& other) {
+                cb_ = other.cb_;
+                data_ = other.data_;
+                increment();
+            }
+
+            WeakPtr& operator=(const WeakPtr& other) {
+                if (this == &other) {
+                    return *this;
+                }
+                release();
+
+                cb_ = other.cb_;
+                data_ = other.data_;
+                increment();
+                return *this;
+            }
+
+            WeakPtr(WeakPtr&& other) {
+                cb_ = std::exchange(other.cb_, nullptr);
+                data_ = std::exchange(other.data_, nullptr);
+            }
+
+            WeakPtr& operator=(WeakPtr&& other) {
+                if (this == &other) {
+                    return *this;
+                }
+                release();
+
+                cb_ = std::exchange(other.cb_, nullptr);
+                data_ = std::exchange(other.data_, nullptr);
+                return *this;
+            }
+
+            WeakPtr(const SharedPtr<T>& shared) {
+                cb_ = shared.cb_;
+                data_ = shared.data_;
+                increment();
+            }
+
+            std::size_t use_count() const { return cb_ ? cb_->strong_count_ : 0; }
+
+            bool expired() { return !cb_ || cb_->strong_count_.load() == 0; }
+
+            SharedPtr<T> lock() {
+                if (!cb_) return SharedPtr<T>{};
+
+                std::size_t curr = cb_->strong_count_.load();
+                while (curr != 0) {
+                    if (cb_->strong_count_.compare_exchange_weak(curr, curr + 1)) {
+                        return SharedPtr<T>(data_, cb_);
+                    }
+                }
+                return SharedPtr<T>{};
+            }
+
+        private:
+            T* data_{nullptr};
+            ControlBlock* cb_{nullptr};
+
+            void increment() { if (cb_) cb_->weak_count_.fetch_add(1); }
+            std::size_t decrement() { return cb_->weak_count_.fetch_sub(1); }
+            void release() {
+                if (cb_ && decrement() == 1) {
+                    delete cb_;
+                }
+            }
+    };
 }
