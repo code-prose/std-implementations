@@ -90,10 +90,10 @@ public:
     }
 
     template <typename... Args>
-    void emplace_back(Args... args) {
+    void emplace_back(Args&&... args) {
         grow();
         new (last_) T(std::forward<Args>(args)...);
-
+        ++last_;
     }
 
     Vec(Vec&& other) noexcept {
