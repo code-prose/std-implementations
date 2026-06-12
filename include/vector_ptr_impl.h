@@ -6,7 +6,6 @@
 template <typename T>
 class Vec {
 public:
-    //default initalized
     Vec() = default;
 
     Vec(const Vec& other) {
@@ -35,48 +34,68 @@ public:
         return first_[i];
     }
 
-    // we are not deconstructing the item, this could lead to a leak
+    const T& at(std::size_t i) const {
+        if (i >= size()) throw std::out_of_range("Vec::at");
+        return first_[i];
+    }
+
+    // int, size_t, std::string
     void pop_back() {
         --last_;
         last_->~T();
     }
 
-    void push_back(const T& value) {
-        // check if size has reached capacity
-        if (limit_ - first_ == size()) {
-            // 2 was chosen arbitrarily, but we can amortize push_back to O(1) with a geometric sequence so N > 1 where N is an integer
-            std::size_t new_cap = size() * 2;
-            T* new_first_ = static_cast<T*>(::operator new(new_cap * sizeof(T)));
+    void cleanup() {
+        for (T* p = first_; p != last_; ++p) {
+            p->~T();
+        }
+        ::operator delete(first_);
+    }
+
+    void grow() {
+        if (last_ == limit_) {
+            std::size_t new_capacity = capacity() ? capacity() * 2 : 1;
+            T* new_first_ = static_cast<T*>(::operator new(new_capacity * sizeof(T)));
             auto i{0uz};
             try {
                 for (; first_ + i < last_; ++i) {
-                    // we can also use std::move_if_noexcept here
-                    new (new_first_ + i) T(std::move_if_noexcept(first_ + i));
+                    new (new_first_ + i) T(std::move_if_noexcept(first_[i]));
                 }
 
-                // make sure to call destructor for each
-                for (T* p = first_; p < last_; ++p) {
-                    p->~T();
-                }
-                // deallocate old buffer
-                ::operator delete(first_);
+                cleanup();
                 last_ = new_first_ + size();
                 first_ = new_first_;
-                limit_ = first_ + new_cap;
+                limit_ = first_ + new_capacity;
 
             } catch (...) {
-                // if we fail to allocate, need to cleanup
-                for (auto j{0uz}; j < i; ++i) {
-                    new_first_->~T();
-                }
-                ::operator delete(new_first_);
+               for (auto j{0uz}; j < i; ++j) {
+                   new_first_[j].~T();
+               } 
+               ::operator delete(new_first_);
+               throw;
             }
         }
+    }
+
+    void push_back(const T& value) {
+        grow();
         new (last_) T(value);
         ++last_;
     }
 
-    // just make sure we leave other in a valid state
+    void push_back(T&& value) {
+        grow();
+        new (last_) T(std::move(value));
+        ++last_;
+    }
+
+    template <typename... Args>
+    void emplace_back(Args... args) {
+        grow();
+        new (last_) T(std::forward<Args>(args)...);
+
+    }
+
     Vec(Vec&& other) noexcept {
         first_ = std::exchange(other.first_, nullptr);
         last_ = std::exchange(other.last_, nullptr);
@@ -88,28 +107,24 @@ public:
             return *this;
         }
 
-        // make sure we free
-        for (T* p = first_; p < last_; ++p) {
-            p->~T();
-        }
 
-        ::operator delete(first_);
+        cleanup();
 
-        // swap out the elements to prevent bad usage after move. Leave in valid but unspecified state
         first_ = std::exchange(other.first_, nullptr);
         last_ = std::exchange(other.last_, nullptr);
         limit_ = std::exchange(other.limit_, nullptr);
-
         return *this;
     }
 
-    // no exception handling here
-    T& operator[](std::size_t i) {
+    T& operator[](std::size_t i) noexcept {
+        return first_[i];
+    }
+
+    const T& operator[](std::size_t i) const noexcept {
         return first_[i];
     }
 
 private:
-    // all of the default values are here
     T* first_ = nullptr;
     T* last_ = nullptr;
     T* limit_ = nullptr;
